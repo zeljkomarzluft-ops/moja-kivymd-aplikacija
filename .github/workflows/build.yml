@@ -18,10 +18,16 @@ jobs:
       with:
         python-version: '3.11'
 
+    - name: Postavljanje Jave 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
     - name: Instalacija sistemskih alata
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential ccache git libncurses6 zip unzip zlib1g-dev openjdk-17-jdk cmake ninja-build
+        sudo apt-get install -y build-essential ccache git libncurses6 zip unzip zlib1g-dev cmake ninja-build
 
     - name: Instalacija Buildozera i Cythona
       run: |
@@ -43,4 +49,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: moja-aplikacija-apk
+        path: bin/*.apk
         path: bin/*.apk
