@@ -50,4 +50,3 @@ jobs:
       with:
         name: moja-aplikacija-apk
         path: bin/*.apk
-        path: bin/*.apk
