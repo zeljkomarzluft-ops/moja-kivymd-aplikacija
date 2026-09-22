@@ -21,7 +21,7 @@ jobs:
     - name: Instalacija sistemskih alata
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential ccache git libncurses5:i386 zip unzip zlib1g-dev openjdk-17-jdk cmake ninja-build
+        sudo apt-get install -y build-essential ccache git libncurses6 zip unzip zlib1g-dev openjdk-17-jdk cmake ninja-build
 
     - name: Instalacija Buildozera i Cythona
       run: |
