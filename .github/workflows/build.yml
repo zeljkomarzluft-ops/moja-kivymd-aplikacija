@@ -1,0 +1,39 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Preuzimanje koda
+      uses: actions/checkout@v4
+
+    - name: Postavljanje Pythona 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Instalacija sistemskih alata
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential ccache git libncurses5:i386 zip unzip zlib1g-dev openjdk-17-jdk cmake ninja-build
+
+    - name: Instalacija Buildozera i Cythona
+      run: |
+        pip install --upgrade pip
+        pip install "buildozer<2.0.0" "cython==0.29.33"
+
+    - name: Pokretanje Buildozera
+      run: |
+        buildozer android debug
+
+    - name: Spremanje APK datoteke
+      uses: actions/upload-artifact@v4
+      with:
+        name: moja-aplikacija-apk
+        path: bin/*.apk
