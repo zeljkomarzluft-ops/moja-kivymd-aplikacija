@@ -8,7 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
 # Postavke stranice
-st.set_page_config(page_title="Naručivanje Materijala - Elgrad", layout="wide", page_icon="📦")
+st.set_page_config(page_title="Prijedlog Narudžbe Materijala - Elgrad", layout="wide", page_icon="📦")
 
 EXCEL_FILE = "lager_pula.xlsx"
 
@@ -20,7 +20,7 @@ def ucitaj_podatke():
         # Učitavanje Excel datoteke
         df = pd.read_excel(EXCEL_FILE)
         
-        # Čišćenje naziva stupaca (uklanjanje praznina i prebacivanje u mala slova radi lakšeg mapiranja)
+        # Čišćenje naziva stupaca (uklanjanje praznina)
         df.columns = df.columns.astype(str).str.strip()
         
         # Mapiranje točnih stupaca prema vašoj tablici
@@ -57,7 +57,8 @@ def generiraj_pdf(narudzba_df):
     title_style = styles['Heading1']
     title_style.alignment = 1  # Centrirano
     
-    story.append(Paragraph("<b>NARUDŽBENICA MATERIJALA - ELGRAD</b>", title_style))
+    # Promijenjen naslov u PDF dokumentu
+    story.append(Paragraph("<b>PRIJEDLOG NARUDŽBE</b>", title_style))
     story.append(Spacer(1, 20))
     
     # Priprema podataka za tablicu PDF-a
@@ -84,7 +85,7 @@ def generiraj_pdf(narudzba_df):
     return buffer
 
 # --- GLAVNI INTERFEJS ---
-st.title("📦 Pregled Lagera i Narudžba Materijala")
+st.title("📦 Pregled Lagera i Prijedlog Narudžbe")
 
 df = ucitaj_podatke()
 
@@ -111,7 +112,6 @@ else:
         
         # 2. Odabir regala
         if 'Regal' in df_strana.columns:
-            # Sortiranje po broju regala
             regali_raw = df_strana['Regal'].dropna().unique()
             try:
                 regali = sorted([int(x) for x in regali_raw if str(x).isdigit()])
@@ -160,7 +160,6 @@ else:
                 with col5:
                     if pd.notna(slika_url) and str(slika_url).strip().startswith("http"):
                         url_str = str(slika_url).strip()
-                        # Prikaz sličice i gumba za otvaranje
                         st.image(url_str, width=70)
                         st.markdown(f"[🔍 Puni prikaz]({url_str})", unsafe_allow_html=True)
                     else:
@@ -188,11 +187,12 @@ else:
                 
                 pdf_data = generiraj_pdf(df_narudzsba)
                 
+                # Promijenjen naziv gumba i datoteke
                 st.download_button(
-                    label="📄 Preuzmi PDF Narudžbenicu",
+                    label="📄 Preuzmi Prijedlog narudžbe",
                     data=pdf_data,
-                    file_name="narudzbenica_materijala.pdf",
+                    file_name="prijedlog_narudzbe.pdf",
                     mime="application/pdf"
                 )
             else:
-                st.info("Upišite količinu veću od 0 u polja iznad za kreiranje PDF narudžbenice.")
+                st.info("Upišite količinu veću od 0 u polja iznad za kreiranje prijedloga narudžbe.")
