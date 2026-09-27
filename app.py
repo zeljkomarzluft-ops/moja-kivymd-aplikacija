@@ -8,23 +8,20 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
 # Postavke stranice
-st.set_page_config(page_title="Upravljanje Skladištem i Narudžbe - Elgrad", layout="wide", page_icon="📦")
+st.set_page_config(page_title="Upravljanje Skladištem - Elgrad", layout="wide", page_icon="📦")
 
 EXCEL_FILE = "lager_pula.xlsx"
 
-# --- INICIJALIZACIJA TRAJNE MEMORIJE (SESSION STATE) ---
+# Trajna memorija za košaricu narudžbe
 if "cart" not in st.session_state:
-    st.session_state.cart = {}  # {sifra: {'sifra': ..., 'naziv': ..., 'kolicina': ...}}
+    st.session_state.cart = {}
 
-if "inventura" not in st.session_state:
-    st.session_state.inventura = {}  # {sifra: {'sifra': ..., 'naziv': ..., 'lager': ..., 'brojano': ..., 'razlika': ...}}
-
-# --- FUNKCIJE ZA RAD S PODACIMA ---
 @st.cache_data
 def ucitaj_podatke():
     if not os.path.exists(EXCEL_FILE):
         return None
     try:
+        # Učitavanje Excel datoteke
         df = pd.read_excel(EXCEL_FILE)
         df.columns = df.columns.astype(str).str.strip()
         
@@ -45,8 +42,26 @@ def ucitaj_podatke():
                 mapa_stupaca[col] = 'Lager'
             elif 'slika' in c_low or 'url' in c_low:
                 mapa_stupaca[col] = 'Slika_URL'
+            elif 'faktor' in c_low:
+                mapa_stupaca[col] = 'Faktor'
+            elif 'mjerna' in c_low or 'jedinica' in c_low or c_low == 'jm':
+                mapa_stupaca[col] = 'Mjerna_Jedinica'
         
         df = df.rename(columns=mapa_stupaca)
+        
+        # Obrada kolone Faktor (zamjena zareza u tačku radi pretvaranja u broj)
+        if 'Faktor' in df.columns:
+            df['Faktor'] = df['Faktor'].astype(str).str.replace(',', '.', regex=False)
+            df['Faktor'] = pd.to_numeric(df['Faktor'], errors='coerce').fillna(1.0)
+        else:
+            df['Faktor'] = 1.0
+
+        # Obrada kolone Mjerna Jedinica
+        if 'Mjerna_Jedinica' not in df.columns:
+            df['Mjerna_Jedinica'] = 'm²'
+        else:
+            df['Mjerna_Jedinica'] = df['Mjerna_Jedinica'].fillna('m²').astype(str)
+            
         return df
     except Exception as e:
         st.error(f"Greška pri čitanju Excel datoteke: {e}")
@@ -54,7 +69,7 @@ def ucitaj_podatke():
 
 def generiraj_pdf_narudzba(narudzba_list):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
     story = []
     
     styles = getSampleStyleSheet()
@@ -64,17 +79,22 @@ def generiraj_pdf_narudzba(narudzba_list):
     story.append(Paragraph("<b>PRIJEDLOG NARUDŽBE MATERIJALA</b>", title_style))
     story.append(Spacer(1, 20))
     
-    table_data = [["Šifra", "Naziv dekora / materijala", "Naručena količina"]]
+    table_data = [["Šifra", "Naziv dekora / materijala", "Br. Kom / Ploča", "Ukupno"]]
     for item in narudzba_list:
-        table_data.append([str(item['Šifra']), str(item['Naziv']), str(item['Količina'])])
+        table_data.append([
+            str(item['Šifra']),
+            str(item['Naziv']),
+            f"{item['Količina']:.0f}",
+            f"{item['Ukupno_M2']:.2f} {item['Jedinica']}"
+        ])
     
-    t = Table(table_data, colWidths=[100, 320, 120])
+    t = Table(table_data, colWidths=[90, 270, 100, 110])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E88E5")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
         ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#F5F5F5")),
         ('GRID', (0, 0), (-1, -1), 1, colors.HexColor("#BDBDBD")),
@@ -88,7 +108,7 @@ def generiraj_pdf_narudzba(narudzba_list):
 
 def generiraj_pdf_inventura(inventura_list, info_regal):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
     story = []
     
     styles = getSampleStyleSheet()
@@ -99,26 +119,26 @@ def generiraj_pdf_inventura(inventura_list, info_regal):
     story.append(Paragraph(f"<font size=10>Lokacija: {info_regal}</font>", styles['Normal']))
     story.append(Spacer(1, 15))
     
-    table_data = [["Šifra", "Naziv dekora", "Knjig. Lager", "Brojano", "Razlika"]]
+    table_data = [["Šifra", "Naziv dekora", "Brojano (kom)", "Ukupno", "Napomena / Bilješka"]]
     for item in inventura_list:
-        razlika = item['Razlika']
-        razlika_str = f"+{razlika}" if razlika > 0 else str(razlika)
         table_data.append([
             str(item['Šifra']),
             str(item['Naziv']),
-            str(item['Lager']),
-            str(item['Brojano']),
-            razlika_str
+            f"{item['Brojano']:.0f}",
+            f"{item['Ukupno_M2']:.2f} {item['Jedinica']}",
+            ""
         ])
     
-    t = Table(table_data, colWidths=[80, 240, 70, 70, 80])
+    t = Table(table_data, colWidths=[80, 210, 80, 100, 100])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#388E3C")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
         ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#F1F8E9")),
         ('GRID', (0, 0), (-1, -1), 1, colors.HexColor("#A5D6A7")),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -137,17 +157,13 @@ df = ucitaj_podatke()
 if df is None:
     st.error(f"Datoteka `{EXCEL_FILE}` nije pronađena u repozitoriju ili je neispravna.")
 else:
-    # --- BOČNA TRAKA (SIDEBAR) ---
     with st.sidebar:
         st.header("⚙️ Opcije i Alati")
-        
         if st.button("🔄 Osvježi podatke iz Excela", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
             
         st.divider()
-        
-        # Forma za dodavanje novog dekora
         st.subheader("➕ Dodaj novi dekor")
         with st.form("forma_novi_dekor"):
             novo_sifra = st.text_input("Šifra dekora*")
@@ -156,6 +172,8 @@ else:
             novo_regal = st.text_input("Regal (npr. 5)")
             novo_polica = st.text_input("Polica (npr. A)")
             novo_lager = st.number_input("Početni Lager", min_value=0.0, step=1.0)
+            novo_faktor = st.number_input("Faktor (m²/m' po komadu)", min_value=0.001, value=5.796, format="%.3f")
+            novo_jedinica = st.selectbox("Mjerna jedinica", ["m²", "m'", "kom"])
             novo_url = st.text_input("Slika URL")
             
             submit_dekor = st.form_submit_button("Spremi u tablicu")
@@ -168,9 +186,10 @@ else:
                         'Regal': novo_regal if novo_regal else '1',
                         'Polica': novo_polica if novo_polica else 'A',
                         'Lager': novo_lager,
+                        'Faktor': novo_faktor,
+                        'Mjerna_Jedinica': novo_jedinica,
                         'Slika_URL': novo_url
                     }])
-                    # Učitaj trenutne i dodaj
                     try:
                         df_trenutni = pd.read_excel(EXCEL_FILE)
                         df_osvjezeni = pd.concat([df_trenutni, novi_red], ignore_index=True)
@@ -183,15 +202,12 @@ else:
                 else:
                     st.warning("Upišite barem Šifru i Naziv dekora.")
 
-    # Main Tabs: Narudžba vs Inventura
     tab_narudzba, tab_inventura = st.tabs(["📋 Prijedlog Narudžbe", "📊 Inventura / Kontrola Regala"])
 
     # ==========================================
     # TAB 1: PRIJEDLOG NARUDŽBE
     # ==========================================
     with tab_narudzba:
-        st.subheader("1. Odabir lokacije i unos količina za narudžbu")
-        
         col_s, col_r = st.columns(2)
         with col_s:
             strane = sorted([str(x).strip() for x in df['Strana'].dropna().unique()])
@@ -218,10 +234,10 @@ else:
             h1, h2, h3, h4, h5, h6 = st.columns([1.5, 3, 1, 1, 1.5, 2])
             h1.markdown("**Šifra**")
             h2.markdown("**Naziv dekora**")
-            h3.markdown("**Polica**")
+            h3.markdown("**Polica / Faktor**")
             h4.markdown("**Lager**")
             h5.markdown("**Slika**")
-            h6.markdown("**Količina za narudžbu**")
+            h6.markdown("**Naruči komada**")
             st.divider()
 
             for idx, row in df_filtrirano.iterrows():
@@ -229,6 +245,8 @@ else:
                 naziv = str(row.get('Naziv', 'N/A'))
                 polica = str(row.get('Polica', '-'))
                 lager = str(row.get('Lager', 0))
+                faktor = float(row.get('Faktor', 1.0))
+                jedinica = str(row.get('Mjerna_Jedinica', 'm²'))
                 slika_url = row.get('Slika_URL', None)
                 
                 col1, col2, col3, col4, col5, col6 = st.columns([1.5, 3, 1, 1, 1.5, 2])
@@ -238,18 +256,16 @@ else:
                 with col2:
                     st.write(f"{naziv}")
                 with col3:
-                    st.write(f"Polica: **{polica}**")
+                    st.write(f"Polica: **{polica}**\n\n({faktor} {jedinica})")
                 with col4:
                     st.write(f"**{lager}**")
                 with col5:
                     if pd.notna(slika_url) and str(slika_url).strip().startswith("http"):
-                        url_str = str(slika_url).strip()
-                        st.image(url_str, width=60)
+                        st.image(str(slika_url).strip(), width=60)
                     else:
                         st.write("-")
                 with col6:
-                    # Dohvati dosad unesenu vrijednost iz trajne memorije
-                    trenutna_val = st.session_state.cart.get(sifra, {}).get('kolicina', 0.0)
+                    trenutna_val = st.session_state.cart.get(sifra, {}).get('Količina', 0.0)
                     
                     unos_kolicina = st.number_input(
                         f"Naruči {sifra}:",
@@ -260,23 +276,22 @@ else:
                         label_visibility="collapsed"
                     )
                     
-                    # Ažuriraj trajnu memoriju
                     if unos_kolicina > 0:
                         st.session_state.cart[sifra] = {
                             'Šifra': sifra,
                             'Naziv': naziv,
-                            'Količina': unos_kolicina
+                            'Količina': unos_kolicina,
+                            'Ukupno_M2': unos_kolicina * faktor,
+                            'Jedinica': jedinica
                         }
                     elif sifra in st.session_state.cart and unos_kolicina == 0:
                         del st.session_state.cart[sifra]
                 st.divider()
 
-        # PREGLED UKUPNE KOŠARICE I GENERIRANJE PDF-A
-        st.subheader("🛒 Ukupno odabrano za narudžbu (Svi regali)")
-        
+        st.subheader("🛒 Ukupno odabrano za narudžbu")
         stvarne_stavke = list(st.session_state.cart.values())
         if stvarne_stavke:
-            df_kosarica = pd.DataFrame(stvarne_stavke)
+            df_kosarica = pd.DataFrame(stvarne_stavke).rename(columns={'Ukupno_M2': 'Ukupna Količina'})
             st.dataframe(df_kosarica, use_container_width=True)
             
             col_pdf, col_clear = st.columns([3, 1])
@@ -294,14 +309,12 @@ else:
                     st.session_state.cart = {}
                     st.rerun()
         else:
-            st.info("Košarica je trenutno prazna. Unesite količine u regale iznad.")
+            st.info("Košarica je trenutno prazna.")
 
     # ==========================================
     # TAB 2: INVENTURA / BROJANO U SKLADIŠTU
     # ==========================================
     with tab_inventura:
-        st.subheader("📊 Kontrola i Brojanje po Regalu")
-        
         col_is, col_ir = st.columns(2)
         with col_is:
             strane_inv = sorted([str(x).strip() for x in df['Strana'].dropna().unique()])
@@ -325,12 +338,11 @@ else:
             
             st.success(f"📋 Inventurna lista za: **Regal {inv_regal}** (Strana {inv_strana})")
             
-            h1, h2, h3, h4, h5 = st.columns([1.5, 3, 1, 1.5, 2])
+            h1, h2, h3, h4 = st.columns([1.5, 3.5, 1.5, 1.5])
             h1.markdown("**Šifra**")
             h2.markdown("**Naziv dekora**")
-            h3.markdown("**Knjig. Lager**")
-            h4.markdown("**Stvarno Brojano**")
-            h5.markdown("**Razlika**")
+            h3.markdown("**Brojano (kom)**")
+            h4.markdown("**Ukupno**")
             st.divider()
 
             inventura_lista = []
@@ -338,44 +350,37 @@ else:
             for idx, row in df_inv_filtrirano.iterrows():
                 sifra = str(row.get('Šifra', 'N/A'))
                 naziv = str(row.get('Naziv', 'N/A'))
-                lager = float(row.get('Lager', 0))
+                faktor = float(row.get('Faktor', 1.0))
+                jedinica = str(row.get('Mjerna_Jedinica', 'm²'))
                 
-                col1, col2, col3, col4, col5 = st.columns([1.5, 3, 1, 1.5, 2])
+                col1, col2, col3, col4 = st.columns([1.5, 3.5, 1.5, 1.5])
                 
                 with col1:
                     st.write(f"**{sifra}**")
                 with col2:
                     st.write(f"{naziv}")
                 with col3:
-                    st.write(f"**{lager:.0f}**")
-                with col4:
                     brojano = st.number_input(
                         f"Brojano {sifra}:",
                         min_value=0.0,
                         step=1.0,
-                        value=lager,  # Početno stavljamo zatečeno stanje
+                        value=0.0,
                         key=f"inv_in_{sifra}_{idx}",
                         label_visibility="collapsed"
                     )
-                with col5:
-                    razlika = brojano - lager
-                    if razlika == 0:
-                        st.markdown("<span style='color:green; font-weight:bold;'>0 (U redu)</span>", unsafe_allow_html=True)
-                    elif razlika > 0:
-                        st.markdown(f"<span style='color:blue; font-weight:bold;'>+{razlika:.0f} (Višak)</span>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"<span style='color:red; font-weight:bold;'>{razlika:.0f} (Manjak)</span>", unsafe_allow_html=True)
+                with col4:
+                    ukupno_m2 = brojano * faktor
+                    st.write(f"**{ukupno_m2:.2f} {jedinica}**")
                 
                 inventura_lista.append({
                     'Šifra': sifra,
                     'Naziv': naziv,
-                    'Lager': lager,
                     'Brojano': brojano,
-                    'Razlika': razlika
+                    'Ukupno_M2': ukupno_m2,
+                    'Jedinica': jedinica
                 })
                 st.divider()
 
-            # GENERIRANJE INVENTURNOG IZVJEŠĆA
             if inventura_lista:
                 pdf_inv_data = generiraj_pdf_inventura(inventura_lista, f"Regal {inv_regal} ({inv_strana})")
                 st.download_button(
