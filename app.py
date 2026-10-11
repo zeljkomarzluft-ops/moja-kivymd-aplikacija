@@ -21,7 +21,6 @@ def ucitaj_podatke():
     if not os.path.exists(EXCEL_FILE):
         return None
     try:
-        # Učitavanje Excel datoteke
         df = pd.read_excel(EXCEL_FILE)
         df.columns = df.columns.astype(str).str.strip()
         
@@ -49,14 +48,12 @@ def ucitaj_podatke():
         
         df = df.rename(columns=mapa_stupaca)
         
-        # Obrada kolone Faktor (zamjena zareza u tačku radi pretvaranja u broj)
         if 'Faktor' in df.columns:
             df['Faktor'] = df['Faktor'].astype(str).str.replace(',', '.', regex=False)
             df['Faktor'] = pd.to_numeric(df['Faktor'], errors='coerce').fillna(1.0)
         else:
             df['Faktor'] = 1.0
 
-        # Obrada kolone Mjerna Jedinica
         if 'Mjerna_Jedinica' not in df.columns:
             df['Mjerna_Jedinica'] = 'm²'
         else:
@@ -265,33 +262,41 @@ else:
                     else:
                         st.write("-")
                 with col6:
-                    trenutna_val = st.session_state.cart.get(sifra, {}).get('Količina', 0.0)
+                    cart_key = f"cart_{sifra}_{idx}"
+                    # Dohvati dosad unesenu vrijednost iz memorije (kao string radi unosa)
+                    trenutna_val = st.session_state.cart.get(cart_key, {}).get('Količina_Str', "0")
                     
-                    unos_kolicina = st.number_input(
-                        f"Naruči {sifra}:",
-                        min_value=0.0,
-                        step=1.0,
-                        value=float(trenutna_val),
-                        key=f"cart_in_{sifra}",
-                        label_visibility="collapsed"
+                    unos_tekst = st.text_input(
+                        f"Naruči {sifra}_{idx}:",
+                        value=str(trenutna_val),
+                        key=cart_key,
+                        label_visibility="collapsed",
+                        help="Upišite količinu s numeričke tipkovnice"
                     )
                     
+                    # Pretvorba unesenog teksta u broj
+                    try:
+                        unos_kolicina = float(unos_tekst.replace(',', '.')) if unos_tekst.strip() else 0.0
+                    except ValueError:
+                        unos_kolicina = 0.0
+                    
                     if unos_kolicina > 0:
-                        st.session_state.cart[sifra] = {
+                        st.session_state.cart[cart_key] = {
                             'Šifra': sifra,
                             'Naziv': naziv,
                             'Količina': unos_kolicina,
+                            'Količina_Str': unos_tekst,
                             'Ukupno_M2': unos_kolicina * faktor,
                             'Jedinica': jedinica
                         }
-                    elif sifra in st.session_state.cart and unos_kolicina == 0:
-                        del st.session_state.cart[sifra]
+                    elif cart_key in st.session_state.cart and (unos_kolicina == 0 or unos_tekst.strip() == "0"):
+                        del st.session_state.cart[cart_key]
                 st.divider()
 
         st.subheader("🛒 Ukupno odabrano za narudžbu")
         stvarne_stavke = list(st.session_state.cart.values())
         if stvarne_stavke:
-            df_kosarica = pd.DataFrame(stvarne_stavke).rename(columns={'Ukupno_M2': 'Ukupna Količina'})
+            df_kosarica = pd.DataFrame(stvarne_stavke)[['Šifra', 'Naziv', 'Količina', 'Ukupno_M2', 'Jedinica']].rename(columns={'Količina': 'Br. Kom', 'Ukupno_M2': 'Ukupna Količina'})
             st.dataframe(df_kosarica, use_container_width=True)
             
             col_pdf, col_clear = st.columns([3, 1])
@@ -360,14 +365,24 @@ else:
                 with col2:
                     st.write(f"{naziv}")
                 with col3:
-                    brojano = st.number_input(
-                        f"Brojano {sifra}:",
-                        min_value=0.0,
-                        step=1.0,
-                        value=0.0,
-                        key=f"inv_in_{sifra}_{idx}",
+                    inv_key = f"inv_in_{sifra}_{idx}"
+                    # Spremanje stanja inventure preko session state da se ne briše
+                    if inv_key not in st.session_state:
+                        st.session_state[inv_key] = "0"
+                        
+                    inv_tekst = st.text_input(
+                        f"Brojano {sifra}_{idx}:",
+                        value=st.session_state[inv_key],
+                        key=f"txt_{inv_key}",
                         label_visibility="collapsed"
                     )
+                    st.session_state[inv_key] = inv_tekst
+                    
+                    try:
+                        brojano = float(inv_tekst.replace(',', '.')) if inv_tekst.strip() else 0.0
+                    except ValueError:
+                        brojano = 0.0
+                        
                 with col4:
                     ukupno_m2 = brojano * faktor
                     st.write(f"**{ukupno_m2:.2f} {jedinica}**")
